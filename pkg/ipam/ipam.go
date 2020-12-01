@@ -85,27 +85,18 @@ func (ipam *IPAM) ReleaseAddressByPod(podName string) {
 func (ipam *IPAM) AddOrUpdateSubnet(name, cidrStr string, excludeIps []string) error {
 	ipam.mutex.Lock()
 	defer ipam.mutex.Unlock()
-	v4CIDR := cidrStr
-	v6CIDR := cidrStr
+	v4cidrStr := cidrStr
+	v6cidrStr := cidrStr
+	var err error
 
 	protocol := util.CheckProtocol(cidrStr)
 	if protocol == kubeovnv1.ProtocolDual {
-		cidrBlocks := strings.Split(cidrStr, ",")
-		_, _, err := net.ParseCIDR(cidrBlocks[0])
-		if err != nil {
-			return InvalidCIDRError
-		}
-		_, _, err = net.ParseCIDR(cidrBlocks[1])
-		if err != nil {
-			return InvalidCIDRError
-		}
-		v4CIDR = cidrBlocks[0]
-		v6CIDR = cidrBlocks[1]
+		v4cidrStr, v6cidrStr, err = util.CheckDualCidrs(cidrStr)
 	} else {
-		_, _, err := net.ParseCIDR(cidrStr)
-		if err != nil {
-			return InvalidCIDRError
-		}
+		_, _, err = net.ParseCIDR(cidrStr)
+	}
+	if err != nil {
+		return InvalidCIDRError
 	}
 
 	// subnet.Spec.ExcludeIps contains both v4 and v6 addresses
@@ -115,8 +106,8 @@ func (ipam *IPAM) AddOrUpdateSubnet(name, cidrStr string, excludeIps []string) e
 		subnet.Protocol = protocol
 		if protocol == kubeovnv1.ProtocolDual || protocol == kubeovnv1.ProtocolIPv4 {
 			subnet.V4ReservedIPList = convertExcludeIps(v4ExcludeIps)
-			firstIP, _ := util.FirstSubnetIP(v4CIDR)
-			lastIP, _ := util.LastIP(v4CIDR)
+			firstIP, _ := util.FirstSubnetIP(v4cidrStr)
+			lastIP, _ := util.LastIP(v4cidrStr)
 			subnet.V4FreeIPList = IPRangeList{&IPRange{Start: IP(firstIP), End: IP(lastIP)}}
 			subnet.joinFreeWithReserve()
 			for podName, ip := range subnet.V4PodToIP {
@@ -128,8 +119,8 @@ func (ipam *IPAM) AddOrUpdateSubnet(name, cidrStr string, excludeIps []string) e
 		}
 		if protocol == kubeovnv1.ProtocolDual || protocol == kubeovnv1.ProtocolIPv6 {
 			subnet.V6ReservedIPList = convertExcludeIps(v6ExcludeIps)
-			firstIP, _ := util.FirstSubnetIP(v6CIDR)
-			lastIP, _ := util.LastIP(v6CIDR)
+			firstIP, _ := util.FirstSubnetIP(v6cidrStr)
+			lastIP, _ := util.LastIP(v6cidrStr)
 			subnet.V6FreeIPList = IPRangeList{&IPRange{Start: IP(firstIP), End: IP(lastIP)}}
 			subnet.joinFreeWithReserve()
 			for podName, ip := range subnet.V6PodToIP {

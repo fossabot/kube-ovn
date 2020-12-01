@@ -33,31 +33,22 @@ type Subnet struct {
 func NewSubnet(name, cidrStr string, excludeIps []string) (*Subnet, error) {
 	var v4CIDR, v6CIDR *net.IPNet
 	var err error
-	v4CidrStr := cidrStr
-	v6CidrStr := cidrStr
+	var cidrBlocks []string
+
 	protocol := util.CheckProtocol(cidrStr)
 	if protocol == kubeovnv1.ProtocolDual {
-		cidrBlocks := strings.Split(cidrStr, ",")
-		_, v4CIDR, err = net.ParseCIDR(cidrBlocks[0])
-		if err != nil {
-			return nil, InvalidCIDRError
-		}
-		_, v6CIDR, err = net.ParseCIDR(cidrBlocks[1])
-		if err != nil {
-			return nil, InvalidCIDRError
-		}
-		v4CidrStr = cidrBlocks[0]
-		v6CidrStr = cidrBlocks[1]
+		_, _, err = util.CheckDualCidrs(cidrStr)
+
+		cidrBlocks = strings.Split(cidrStr, ",")
+		_, v4CIDR, _ = net.ParseCIDR(cidrBlocks[0])
+		_, v6CIDR, _ = net.ParseCIDR(cidrBlocks[1])
 	} else if protocol == kubeovnv1.ProtocolIPv4 {
 		_, v4CIDR, err = net.ParseCIDR(cidrStr)
-		if err != nil {
-			return nil, InvalidCIDRError
-		}
 	} else {
 		_, v6CIDR, err = net.ParseCIDR(cidrStr)
-		if err != nil {
-			return nil, InvalidCIDRError
-		}
+	}
+	if err != nil {
+		return nil, InvalidCIDRError
 	}
 
 	// subnet.Spec.ExcludeIps contains both v4 and v6 addresses
@@ -65,8 +56,8 @@ func NewSubnet(name, cidrStr string, excludeIps []string) (*Subnet, error) {
 
 	subnet := Subnet{}
 	if protocol == kubeovnv1.ProtocolIPv4 {
-		firstIP, _ := util.FirstSubnetIP(v4CidrStr)
-		lastIP, _ := util.LastIP(v4CidrStr)
+		firstIP, _ := util.FirstSubnetIP(cidrStr)
+		lastIP, _ := util.LastIP(cidrStr)
 
 		subnet = Subnet{
 			Name:             name,
@@ -83,8 +74,8 @@ func NewSubnet(name, cidrStr string, excludeIps []string) (*Subnet, error) {
 		}
 		subnet.joinFreeWithReserve()
 	} else if protocol == kubeovnv1.ProtocolIPv6 {
-		firstIP, _ := util.FirstSubnetIP(v6CidrStr)
-		lastIP, _ := util.LastIP(v6CidrStr)
+		firstIP, _ := util.FirstSubnetIP(cidrStr)
+		lastIP, _ := util.LastIP(cidrStr)
 
 		subnet = Subnet{
 			Name:             name,
@@ -101,10 +92,10 @@ func NewSubnet(name, cidrStr string, excludeIps []string) (*Subnet, error) {
 		}
 		subnet.joinFreeWithReserve()
 	} else {
-		v4FirstIP, _ := util.FirstSubnetIP(v4CidrStr)
-		v4LastIP, _ := util.LastIP(v4CidrStr)
-		v6FirstIP, _ := util.FirstSubnetIP(v6CidrStr)
-		v6LastIP, _ := util.LastIP(v6CidrStr)
+		v4FirstIP, _ := util.FirstSubnetIP(cidrBlocks[0])
+		v4LastIP, _ := util.LastIP(cidrBlocks[0])
+		v6FirstIP, _ := util.FirstSubnetIP(cidrBlocks[1])
+		v6LastIP, _ := util.LastIP(cidrBlocks[1])
 
 		subnet = Subnet{
 			Name:             name,
@@ -334,7 +325,6 @@ func (subnet *Subnet) GetStaticAddress(podName string, ip IP, mac string, force 
 				subnet.V4IPToPod[ip] = podName
 				return ip, mac, nil
 			}
-			return ip, mac, NoAvailableError
 		}
 	} else if v6 == true {
 		if existPod, ok := subnet.V6IPToPod[ip]; ok {
@@ -364,10 +354,9 @@ func (subnet *Subnet) GetStaticAddress(podName string, ip IP, mac string, force 
 				subnet.V6IPToPod[ip] = podName
 				return ip, mac, nil
 			}
-			return ip, mac, NoAvailableError
 		}
 	}
-	return ip, mac, nil
+	return ip, mac, NoAvailableError
 }
 
 func (subnet *Subnet) ReleaseAddress(podName string) {

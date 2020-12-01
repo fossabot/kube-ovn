@@ -570,6 +570,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	}
 
 	for _, sub := range subnetList {
+		// should be modified for dualstack
 		if sub.Spec.Vpc == subnet.Spec.Vpc && sub.Name != subnet.Name && util.CIDRConflict(sub.Spec.CIDRBlock, subnet.Spec.CIDRBlock) {
 			err = fmt.Errorf("subnet %s cidr %s conflict with subnet %s cidr %s", subnet.Name, subnet.Spec.CIDRBlock, sub.Name, sub.Spec.CIDRBlock)
 			klog.Error(err)
@@ -1060,13 +1061,7 @@ func (c *Controller) reconcileVlan(subnet *kubeovnv1.Subnet) error {
 }
 
 func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
-	cidrBlocks := strings.Split(subnet.Spec.CIDRBlock, ",")
-	_, v4cidr, err := net.ParseCIDR(cidrBlocks[0])
-	if err != nil {
-		return err
-	}
-	_, v6cidr, err := net.ParseCIDR(cidrBlocks[1])
-	if err != nil {
+	if _, _, err := util.CheckDualCidrs(subnet.Spec.CIDRBlock); err != nil {
 		return err
 	}
 	// Get the number of pods, not ips. For one pod with two ip(v4 & v6) in dualstack, num of Items is 1
@@ -1080,8 +1075,11 @@ func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
 	// subnet.Spec.ExcludeIps contains both v4 and v6 addresses
 	v4ExcludeIps, v6ExcludeIps := c.ipam.SplitIpsByProtocol(subnet.Spec.ExcludeIps)
 	// gateway always in excludeIPs
+	cidrBlocks := strings.Split(subnet.Spec.CIDRBlock, ",")
 	v4toSubIPs := ovs.ExpandExcludeIPs(v4ExcludeIps, cidrBlocks[0])
 	v6toSubIPs := ovs.ExpandExcludeIPs(v6ExcludeIps, cidrBlocks[1])
+	_, v4CIDR, _ := net.ParseCIDR(cidrBlocks[0])
+	_, v6CIDR, _ := net.ParseCIDR(cidrBlocks[1])
 	for _, podUsedIP := range podUsedIPs.Items {
 		// The format of podUsedIP.Spec.IPAddress is 10.244.0.0/16,fd00:10:244::/64 when protocol is dualstack
 		splitIPs := strings.Split(podUsedIP.Spec.IPAddress, ",")
@@ -1090,11 +1088,11 @@ func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
 			v6toSubIPs = append(v6toSubIPs, splitIPs[1])
 		}
 	}
-	v4availableIPs := util.AddressCount(v4cidr) - float64(len(util.UniqString(v4toSubIPs)))
+	v4availableIPs := util.AddressCount(v4CIDR) - float64(len(util.UniqString(v4toSubIPs)))
 	if v4availableIPs < 0 {
 		v4availableIPs = 0
 	}
-	v6availableIPs := util.AddressCount(v6cidr) - float64(len(util.UniqString(v6toSubIPs)))
+	v6availableIPs := util.AddressCount(v6CIDR) - float64(len(util.UniqString(v6toSubIPs)))
 	if v6availableIPs < 0 {
 		v6availableIPs = 0
 	}

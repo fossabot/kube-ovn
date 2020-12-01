@@ -2,6 +2,7 @@ package util
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -104,22 +105,17 @@ func CIDRConflict(a, b string) bool {
 func CIDRContainIP(cidrStr, ipStr string) bool {
 	protocol := CheckProtocol(cidrStr)
 	if protocol == kubeovnv1.ProtocolDual {
+		if _, _, err := CheckDualCidrs(cidrStr); err != nil {
+			return false
+		}
 		cidrBlocks := strings.Split(cidrStr, ",")
-		_, v4CIDR, err := net.ParseCIDR(cidrBlocks[0])
-		if err != nil {
-			return false
-		}
-		_, v6CIDR, err := net.ParseCIDR(cidrBlocks[1])
-		if err != nil {
-			return false
-		}
-		v4CIDRStr := cidrBlocks[0]
-		v6CIDRStr := cidrBlocks[1]
+		_, v4CIDR, _ := net.ParseCIDR(cidrBlocks[0])
+		_, v6CIDR, _ := net.ParseCIDR(cidrBlocks[1])
 
 		ips := strings.Split(ipStr, ",")
 		if len(ips) == 2 {
 			// The format of ipStr may be 10.244.0.0/16,fd00:10:244::/64 when protocol is dualstack
-			if CheckProtocol(v4CIDRStr) != CheckProtocol(ips[0]) || CheckProtocol(v6CIDRStr) != CheckProtocol(ips[1]) {
+			if CheckProtocol(cidrBlocks[0]) != CheckProtocol(ips[0]) || CheckProtocol(cidrBlocks[1]) != CheckProtocol(ips[1]) {
 				return false
 			}
 
@@ -130,7 +126,7 @@ func CIDRContainIP(cidrStr, ipStr string) bool {
 			}
 			return v4CIDR.Contains(v4IP) && v6CIDR.Contains(v6IP)
 		} else {
-			if CheckProtocol(v4CIDRStr) != CheckProtocol(ipStr) && CheckProtocol(v6CIDRStr) != CheckProtocol(ipStr) {
+			if CheckProtocol(cidrBlocks[0]) != CheckProtocol(ipStr) && CheckProtocol(cidrBlocks[1]) != CheckProtocol(ipStr) {
 				return false
 			}
 
@@ -157,8 +153,13 @@ func CIDRContainIP(cidrStr, ipStr string) bool {
 }
 
 func CheckProtocol(address string) string {
-	if strings.Contains(address, ",") {
-		return kubeovnv1.ProtocolDual
+	ips := strings.Split(address, ",")
+	if len(ips) == 2 {
+		v4IP := net.ParseIP(strings.Split(ips[0], "/")[0])
+		v6IP := net.ParseIP(strings.Split(ips[1], "/")[0])
+		if v4IP.To4() != nil && v6IP.To16() != nil {
+			return kubeovnv1.ProtocolDual
+		}
 	}
 
 	address = strings.Split(address, "/")[0]
@@ -194,4 +195,18 @@ func IsValidIP(ip string) bool {
 		return true
 	}
 	return false
+}
+
+func CheckDualCidrs(cidr string) (string, string, error) {
+	cidrBlocks := strings.Split(cidr, ",")
+	_, _, err := net.ParseCIDR(cidrBlocks[0])
+	if err != nil {
+		return "", "", errors.New("CIDRInvalid")
+	}
+	_, _, err = net.ParseCIDR(cidrBlocks[1])
+	if err != nil {
+		return "", "", errors.New("CIDRInvalid")
+	}
+
+	return cidrBlocks[0], cidrBlocks[1], nil
 }

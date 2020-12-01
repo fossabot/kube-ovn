@@ -95,6 +95,7 @@ func ValidateSubnet(subnet kubeovnv1.Subnet) error {
 		}
 	}
 
+	// The allow subnets should add adaption for dualstack
 	allow := subnet.Spec.AllowSubnets
 	for _, cidr := range allow {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {

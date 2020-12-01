@@ -141,25 +141,18 @@ func ParseFlags() (*Configuration, error) {
 		return nil, fmt.Errorf("no host nic for vlan")
 	}
 
+	var gw string
+	var err error
 	if config.DefaultGateway == "" {
 		if util.CheckProtocol(config.DefaultCIDR) == kubeovnv1.ProtocolDual {
-			cidrBlocks := strings.Split(config.DefaultCIDR, ",")
-			v4gw, err := util.FirstSubnetIP(cidrBlocks[0])
-			if err != nil {
-				return nil, err
-			}
-			v6gw, err := util.FirstSubnetIP(cidrBlocks[1])
-			if err != nil {
-				return nil, err
-			}
-			config.DefaultGateway = v4gw + "," + v6gw
+			gw, err = parseDualGw(config.DefaultCIDR)
 		} else {
-			gw, err := util.FirstSubnetIP(config.DefaultCIDR)
-			if err != nil {
-				return nil, err
-			}
-			config.DefaultGateway = gw
+			gw, err = util.FirstSubnetIP(config.DefaultCIDR)
 		}
+		if err != nil {
+			return nil, err
+		}
+		config.DefaultGateway = gw
 	}
 
 	if config.DefaultExcludeIps == "" {
@@ -168,23 +161,14 @@ func ParseFlags() (*Configuration, error) {
 
 	if config.NodeSwitchGateway == "" {
 		if util.CheckProtocol(config.NodeSwitchCIDR) == kubeovnv1.ProtocolDual {
-			cidrBlocks := strings.Split(config.NodeSwitchCIDR, ",")
-			v4gw, err := util.FirstSubnetIP(cidrBlocks[0])
-			if err != nil {
-				return nil, err
-			}
-			v6gw, err := util.FirstSubnetIP(cidrBlocks[1])
-			if err != nil {
-				return nil, err
-			}
-			config.NodeSwitchGateway = v4gw + "," + v6gw
+			gw, err = parseDualGw(config.NodeSwitchCIDR)
 		} else {
-			gw, err := util.FirstSubnetIP(config.NodeSwitchCIDR)
-			if err != nil {
-				return nil, err
-			}
-			config.NodeSwitchGateway = gw
+			gw, err = util.FirstSubnetIP(config.NodeSwitchCIDR)
 		}
+		if err != nil {
+			return nil, err
+		}
+		config.NodeSwitchGateway = gw
 	}
 
 	if err := config.initKubeClient(); err != nil {
@@ -227,4 +211,17 @@ func (config *Configuration) initKubeClient() error {
 	}
 	config.KubeClient = kubeClient
 	return nil
+}
+
+func parseDualGw(cidr string) (string, error) {
+	cidrBlocks := strings.Split(cidr, ",")
+	v4gw, err := util.FirstSubnetIP(cidrBlocks[0])
+	if err != nil {
+		return "", err
+	}
+	v6gw, err := util.FirstSubnetIP(cidrBlocks[1])
+	if err != nil {
+		return "", err
+	}
+	return v4gw + "," + v6gw, nil
 }

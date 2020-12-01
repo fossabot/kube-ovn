@@ -314,6 +314,11 @@ func (c *Controller) handleDeleteNode(key string) error {
 		if err := c.ovnClient.DeleteStaticRouteByNextHop(addresses[0].Ip); err != nil {
 			return err
 		}
+		if len(addresses) == 2 {
+			if err := c.ovnClient.DeleteStaticRouteByNextHop(addresses[1].Ip); err != nil {
+				return err
+			}
+		}
 	}
 
 	c.ipam.ReleaseAddressByPod(portName)
